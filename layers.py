@@ -10,7 +10,8 @@ import numpy as np
 class nin(nn.Module):
     def __init__(self, dim_in, dim_out):
         super(nin, self).__init__()
-        self.lin_a = wn(nn.Linear(dim_in, dim_out))
+        self.lin_a = nn.Linear(dim_in, dim_out)
+        # self.lin_a = wn(nn.Linear(dim_in, dim_out))
         self.dim_out = dim_out
     
     def forward(self, x):
@@ -56,10 +57,13 @@ class down_shifted_conv2d(nn.Module):
 
 
 class down_shifted_deconv2d(nn.Module):
-    def __init__(self, num_filters_in, num_filters_out, filter_size=(2,3), stride=(1,1)):
+    def __init__(self, num_filters_in, num_filters_out, filter_size=(2,3), stride=(1,1), norm=None):
         super(down_shifted_deconv2d, self).__init__()
-        self.deconv = wn(nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, stride, 
-                                            output_padding=1))
+        self.deconv = nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, stride, 
+                                            output_padding=1)        
+        if norm == 'weight_norm':
+            self.deconv = wn(nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, stride, 
+                                                output_padding=1))
         self.filter_size = filter_size
         self.stride = stride
 
@@ -98,10 +102,13 @@ class down_right_shifted_conv2d(nn.Module):
 
 class down_right_shifted_deconv2d(nn.Module):
     def __init__(self, num_filters_in, num_filters_out, filter_size=(2,2), stride=(1,1), 
-                    shift_output_right=False):
+                    shift_output_right=False, norm=None):
         super(down_right_shifted_deconv2d, self).__init__()
-        self.deconv = wn(nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, 
-                                                stride, output_padding=1))
+        self.deconv = nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, 
+                                                stride, output_padding=1)
+        if norm == 'weight_norm':
+            self.deconv = wn(nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, 
+                                                    stride, output_padding=1))
         self.filter_size = filter_size
         self.stride = stride
 
@@ -133,8 +140,9 @@ class gated_resnet(nn.Module):
 
     def forward(self, og_x, a=None):
         x = self.conv_input(self.nonlinearity(og_x))
-        if a is not None : 
+        if a is not None :
             x += self.nin_skip(self.nonlinearity(a))
+            
         x = self.nonlinearity(x)
         x = self.dropout(x)
         x = self.conv_out(x)
