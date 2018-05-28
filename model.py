@@ -21,7 +21,7 @@ class PixelCNNLayer_up(nn.Module):
                                         resnet_nonlinearity, skip_connection=1) 
                                             for _ in range(nr_resnet)])
 
-    def forward(self, u, ul, a):
+    def forward(self, u, ul):
         u_list, ul_list = [], []
         
         for i in range(self.nr_resnet):
