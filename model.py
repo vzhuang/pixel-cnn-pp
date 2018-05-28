@@ -96,12 +96,20 @@ class PixelCNN(nn.Module):
                                       norm=self.norm) for _ in range(num_ds)])
         
         self.upsize_u_stream  = nn.ModuleList([
+<<<<<<< HEAD
             down_shifted_deconv2d(nr_filters + num_actions, nr_filters,
+=======
+            down_shifted_deconv2d(nr_filters, nr_filters,
+>>>>>>> edf5c10
                                   stride=(ds,ds), norm=self.norm,
                                   num_actions=self.num_actions) for _ in range(num_ds)])
         
         self.upsize_ul_stream = nn.ModuleList([
+<<<<<<< HEAD
             down_right_shifted_deconv2d(nr_filters + num_actions,
+=======
+            down_right_shifted_deconv2d(nr_filters,
+>>>>>>> edf5c10
                                         nr_filters,
                                         stride=(ds,ds),
                                         norm=self.norm,

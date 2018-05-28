@@ -70,7 +70,7 @@ class down_shifted_deconv2d(nn.Module):
 
     def forward(self, x, a):
         a_tile = a.repeat(x.shape[-2], x.shape[-1], 1, 1).permute(2, 3, 0, 1)
-        x = self.deconv(torch.cat((x, a), dim=1))
+        x = self.deconv(torch.cat((x, a_tile), dim=1))
         xs = [int(y) for y in x.size()]
         return x[:, :, :(xs[2] - self.filter_size[0] + 1), 
                  int((self.filter_size[1] - 1) / 2):(xs[3] - int((self.filter_size[1] - 1) / 2))]
@@ -116,7 +116,7 @@ class down_right_shifted_deconv2d(nn.Module):
 
     def forward(self, x, a):
         a_tile = a.repeat(x.shape[-2], x.shape[-1], 1, 1).permute(2, 3, 0, 1)
-        x = self.deconv(torch.cat((x, a), dim=1))
+        x = self.deconv(torch.cat((x, a_tile), dim=1))
         xs = [int(y) for y in x.size()]
         x = x[:, :, :(xs[2] - self.filter_size[0] + 1):, :(xs[3] - self.filter_size[1] + 1)]
         return x
@@ -141,18 +141,21 @@ class gated_resnet(nn.Module):
         self.dropout = nn.Dropout2d(0.5)
         self.conv_out = conv_op(2 * num_filters + num_actions, 2 * num_filters)
 
-
-    def forward(self, og_x, a, aux=None):
-        a_tile = a.repeat(og_x.shape[-2],og_x.shape[-1],1,1).permute(2, 3, 0, 1)
-        
-        x = self.conv_input(torch.cat((self.nonlinearity(og_x), a_tile), dim=1))
+    def forward(self, og_x, a=None, aux=None):
+        if a is not None:
+            a_tile = a.repeat(og_x.shape[-2],og_x.shape[-1],1,1).permute(2, 3, 0, 1)        
+            x = self.conv_input(torch.cat((self.nonlinearity(og_x), a_tile), dim=1))
+        else:
+            x = self.conv_input(self.nonlinearity(og_x))
         if aux is not None :
             x += self.nin_skip(self.nonlinearity(aux))
-            
         x = self.nonlinearity(x)
         x = self.dropout(x)
-        a_tile2 = a.repeat(x.shape[-2], x.shape[-1],1,1).permute(2, 3, 0, 1)
-        x = self.conv_out(torch.cat((x, a_tile2), dim=1))
-        a, b = torch.chunk(x, 2, dim=1)
-        c3 = a * F.sigmoid(b)
+        if a is not None:
+            a_tile2 = a.repeat(x.shape[-2], x.shape[-1],1,1).permute(2, 3, 0, 1)
+            x = self.conv_out(torch.cat((x, a_tile2), dim=1))
+        else:
+            x = self.conv_out(x)
+        p, q = torch.chunk(x, 2, dim=1)
+        c3 = p * F.sigmoid(q)
         return og_x + c3
