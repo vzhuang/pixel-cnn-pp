@@ -57,18 +57,20 @@ class down_shifted_conv2d(nn.Module):
 
 
 class down_shifted_deconv2d(nn.Module):
-    def __init__(self, num_filters_in, num_filters_out, filter_size=(2,3), stride=(1,1), norm=None):
+    def __init__(self, num_filters_in, num_filters_out, filter_size=(2,3),
+                 stride=(1,1), norm=None, num_actions=0):
         super(down_shifted_deconv2d, self).__init__()
-        self.deconv = nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, stride, 
-                                            output_padding=1)        
+        self.deconv = nn.ConvTranspose2d(num_filters_in + num_actions, num_filters_out,
+                                         filter_size, stride, output_padding=1)        
         if norm == 'weight_norm':
-            self.deconv = wn(nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, stride, 
-                                                output_padding=1))
+            self.deconv = wn(nn.ConvTranspose2d(num_filters_in + num_actions, num_filters_out,
+                                                filter_size, stride, output_padding=1))
         self.filter_size = filter_size
         self.stride = stride
 
-    def forward(self, x):
-        x = self.deconv(x)
+    def forward(self, x, a):
+        a_tile = a.repeat(x.shape[-2], x.shape[-1], 1, 1).permute(2, 3, 0, 1)
+        x = self.deconv(torch.cat((x, a_tile), dim=1))
         xs = [int(y) for y in x.size()]
         return x[:, :, :(xs[2] - self.filter_size[0] + 1), 
                  int((self.filter_size[1] - 1) / 2):(xs[3] - int((self.filter_size[1] - 1) / 2))]
@@ -102,18 +104,19 @@ class down_right_shifted_conv2d(nn.Module):
 
 class down_right_shifted_deconv2d(nn.Module):
     def __init__(self, num_filters_in, num_filters_out, filter_size=(2,2), stride=(1,1), 
-                    shift_output_right=False, norm=None):
+                    shift_output_right=False, norm=None, num_actions=0):
         super(down_right_shifted_deconv2d, self).__init__()
-        self.deconv = nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, 
-                                                stride, output_padding=1)
+        self.deconv = nn.ConvTranspose2d(num_filters_in + num_actions, num_filters_out,
+                                         filter_size, stride, output_padding=1)
         if norm == 'weight_norm':
-            self.deconv = wn(nn.ConvTranspose2d(num_filters_in, num_filters_out, filter_size, 
-                                                    stride, output_padding=1))
+            self.deconv = wn(nn.ConvTranspose2d(num_filters_in + num_actions, num_filters_out,
+                                                filter_size, stride, output_padding=1))
         self.filter_size = filter_size
         self.stride = stride
 
-    def forward(self, x):
-        x = self.deconv(x)
+    def forward(self, x, a):
+        a_tile = a.repeat(x.shape[-2], x.shape[-1], 1, 1).permute(2, 3, 0, 1)
+        x = self.deconv(torch.cat((x, a_tile), dim=1))
         xs = [int(y) for y in x.size()]
         x = x[:, :, :(xs[2] - self.filter_size[0] + 1):, :(xs[3] - self.filter_size[1] + 1)]
         return x
@@ -125,27 +128,35 @@ skip connection parameter : 0 = no skip connection
                             2 = skip connection where skip input size === 2 * input size
 '''
 class gated_resnet(nn.Module):
-    def __init__(self, num_filters, conv_op, nonlinearity=concat_elu, skip_connection=0):
+    def __init__(self, num_filters, conv_op, nonlinearity=concat_elu,
+                 skip_connection=0, num_actions=0):
         super(gated_resnet, self).__init__()
         self.skip_connection = skip_connection
         self.nonlinearity = nonlinearity
-        self.conv_input = conv_op(2 * num_filters, num_filters) # cuz of concat elu
+        self.conv_input = conv_op(2 * num_filters + num_actions, num_filters) # cuz of concat elu
         
         if skip_connection != 0 : 
             self.nin_skip = nin(2 * skip_connection * num_filters, num_filters)
 
         self.dropout = nn.Dropout2d(0.5)
-        self.conv_out = conv_op(2 * num_filters, 2 * num_filters)
+        self.conv_out = conv_op(2 * num_filters + num_actions, 2 * num_filters)
 
 
-    def forward(self, og_x, a=None):
-        x = self.conv_input(self.nonlinearity(og_x))
-        if a is not None :
-            x += self.nin_skip(self.nonlinearity(a))
-            
+    def forward(self, og_x, a=None, aux=None):
+        if a is not None:
+            a_tile = a.repeat(og_x.shape[-2],og_x.shape[-1],1,1).permute(2, 3, 0, 1)        
+            x = self.conv_input(torch.cat((self.nonlinearity(og_x), a_tile), dim=1))
+        else:
+            x = self.conv_input(self.nonlinearity(og_x))
+        if aux is not None :
+            x += self.nin_skip(self.nonlinearity(aux))
         x = self.nonlinearity(x)
         x = self.dropout(x)
-        x = self.conv_out(x)
-        a, b = torch.chunk(x, 2, dim=1)
-        c3 = a * F.sigmoid(b)
+        if a is not None:
+            a_tile2 = a.repeat(x.shape[-2], x.shape[-1],1,1).permute(2, 3, 0, 1)
+            x = self.conv_out(torch.cat((x, a_tile2), dim=1))
+        else:
+            x = self.conv_out(x)
+        p, q = torch.chunk(x, 2, dim=1)
+        c3 = p * F.sigmoid(q)
         return og_x + c3
